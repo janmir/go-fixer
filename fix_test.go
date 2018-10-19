@@ -32,3 +32,12 @@ func TestConvert(t *testing.T) {
 	f.Convert(Currencies.JPY, Currencies.USD, &valFloat)
 	util.Logger("JPY->USD:", valFloat)
 }
+
+func TestSingleConvert(t *testing.T) {
+	f := Make()
+	defer f.Close()
+
+	valString := ""
+	f.Convert(Currencies.JPY, Currencies.PHP, &valString)
+	util.Logger("JPY->PHP:", valString)
+}

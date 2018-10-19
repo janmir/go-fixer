@@ -7,8 +7,10 @@ import (
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"time"
 
+	"github.com/beevik/ntp"
 	"github.com/boltdb/bolt"
 	"github.com/janmir/go-util"
 )
@@ -23,7 +25,8 @@ var (
 
 //Fixer an instance of fixer api
 type Fixer struct {
-	db interface{}
+	local time.Time
+	db    interface{} //*bolt.DB
 }
 
 func init() {
@@ -41,7 +44,22 @@ func init() {
 
 //Make creates a new instance of Fixer
 func Make() Fixer {
-	fix := Fixer{}
+	var (
+		local time.Time
+		err   error
+	)
+	local, err = ntp.Time("time.apple.com")
+	if err != nil {
+		local = time.Now().Local()
+		util.Green("Using localtime time(fallback)")
+	} else {
+		util.Green("Using network time")
+	}
+
+	fix := Fixer{
+		local: local,
+	}
+
 	switch {
 	case !_offline:
 		fix.db = nil
@@ -98,13 +116,43 @@ func (f Fixer) Convert(from, to Currency, out interface{}) error {
 func (f Fixer) Fetch(from, to Currency) (Currency, error) {
 	var (
 		errr  error
-		forex = Currency{}
+		forex = to
 	)
 
 	//check db first
 	// key: date
 	// value: {curr:"", acr:"", sym: ""}
 	//return forex, nil
+	yesterday := f.local.AddDate(0, 0, -1)
+	bucketKey := yesterday.Format("2006-01-02")
+	util.Logger("Local:", bucketKey)
+
+	// store some data
+	fromTo := fmt.Sprintf("%s_%s", from.Acr, to.Acr)
+	found := false
+	value := 0.0
+	err := f.db.(*bolt.DB).View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(bucketKey))
+		if bucket != nil {
+			val := bucket.Get([]byte(fromTo))
+			if val != nil {
+				fl, err := strconv.ParseFloat(string(val), 32)
+				util.Catch(err)
+
+				value = fl
+				found = true
+			}
+		}
+		return nil
+	})
+	util.Catch(err)
+	util.Logger("Found:", found, value)
+
+	if found {
+		util.Magenta("Using cached data")
+		forex.exc = float32(value)
+		return forex, nil
+	}
 
 	//get new data
 loopy:
@@ -127,7 +175,6 @@ loopy:
 				}
 
 				//Handle EuroBack data here
-				forex = to
 				forex.exc = xmlD.Calculate(from, to)
 
 				break loopy
@@ -142,7 +189,6 @@ loopy:
 			_ = apiB
 
 			//Handle API
-			forex = to
 			forex.exc = 0.0
 
 			break loopy
@@ -152,6 +198,19 @@ loopy:
 	}
 
 	//Cache the dates result in database;
+	if errr == nil {
+		util.Magenta("Using cached xml/api data")
+		err = f.db.(*bolt.DB).Update(func(tx *bolt.Tx) error {
+			bucket, err := tx.CreateBucketIfNotExists([]byte(bucketKey))
+			util.Catch(err)
+
+			err = bucket.Put([]byte(fromTo), []byte(fmt.Sprintf("%f", forex.exc)))
+			util.Catch(err)
+
+			return nil
+		})
+		util.Catch(err)
+	}
 
 	return forex, errr
 }
