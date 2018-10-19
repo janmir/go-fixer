@@ -8,7 +8,7 @@ import (
 
 func TestFetch(t *testing.T) {
 	f := Make()
-	f.Fetch(Currencies.PHP, Currencies.USD)
+	f.Fetch(Currencies.PHP, Currencies.USD, true)
 	f.Close()
 }
 
@@ -38,6 +38,6 @@ func TestSingleConvert(t *testing.T) {
 	defer f.Close()
 
 	valString := ""
-	f.Convert(Currencies.JPY, Currencies.PHP, &valString)
-	util.Logger("JPY->PHP:", valString)
+	f.Convert(Currencies.JPY, Currencies.USD, &valString)
+	util.Logger("JPY->USD:", valString)
 }

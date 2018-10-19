@@ -19,6 +19,10 @@ type Source struct {
 	typ, url string
 }
 
+/******************************
+	European Bank XML Data
+*******************************/
+
 //CubeParent data
 type CubeParent struct {
 	Cube CubeTime `xml:"Cube"`
@@ -45,16 +49,14 @@ type EuroCenterBankRootXML struct {
 	Cube CubeParent `xml:"Cube"`
 }
 
-//EUData xml data structure
-// type EUData struct {
-// 	Timestamp string `json:"timestamp"`
-// 	ImageURL  string `json:"img"`
-// 	History   []struct {
-// 		From  string  `json:"from"`
-// 		To    string  `json:"to"`
-// 		Value float32 `json:"value"`
-// 	} `json:"history"`
-// }
+/******************************
+	Currency Converter API
+*******************************/
+
+//CurrencyConverterAPI ...
+type CurrencyConverterAPI struct {
+	Val float32 `json:"val"`
+}
 
 var (
 	_offline = true

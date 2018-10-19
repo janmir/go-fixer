@@ -1,6 +1,7 @@
 package fixer
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -78,7 +79,7 @@ func Make() Fixer {
 }
 
 //Convert converts the value to a different currency
-func (f Fixer) Convert(from, to Currency, out interface{}) error {
+func (f Fixer) Convert(from, to Currency, out interface{}, opt ...interface{}) error {
 	defer util.TimeTrack(time.Now(), "Conversion")
 
 	//check if output variable is a pointer
@@ -90,7 +91,11 @@ func (f Fixer) Convert(from, to Currency, out interface{}) error {
 	}
 
 	//get conversions
-	forex, err := f.Fetch(from, to)
+	cache := true
+	if len(opt) > 0 {
+		cache = opt[0].(bool)
+	}
+	forex, err := f.Fetch(from, to, cache)
 	if err != nil {
 		return err
 	}
@@ -112,7 +117,7 @@ func (f Fixer) Convert(from, to Currency, out interface{}) error {
 }
 
 //Fetch makes a Get request to the source
-func (f Fixer) Fetch(from, to Currency) (Currency, error) {
+func (f Fixer) Fetch(from, to Currency, cache bool) (Currency, error) {
 	var (
 		errr  error
 		forex = to
@@ -157,9 +162,14 @@ loopy:
 	for _, v := range _sources {
 		switch v.typ {
 		case "xml":
-			util.Logger("XML Fetch")
+			util.Cyan("Via XML Fetch")
+
 			//Get the xml
-			xmlB := f.Get(v.url)
+			xmlB, err := f.Get(v.url)
+			if err != nil {
+				util.Red(fmt.Sprintf("%s, unable to get xml data.", err.Error()))
+				continue
+			}
 
 			typee := f.getXMLType(xmlB)
 
@@ -174,21 +184,38 @@ loopy:
 
 				//Handle EuroBack data here
 				forex.exc = xmlD.Calculate(from, to)
-
 				break loopy
 			default:
 			}
 		case "api":
-			util.Logger("API Fetch")
+			util.Cyan("Via API Fetch")
+
 			//Get via api
 			url := fmt.Sprintf(v.url, from.Acr, to.Acr)
 
-			apiB := f.Get(url)
-			_ = apiB
+			apiB, err := f.Get(url)
+			if err != nil {
+				util.Red(fmt.Sprintf("%s, unable to get api data.", err.Error()))
+				continue
+			}
+
+			var raw map[string]*json.RawMessage
+			err = json.Unmarshal(apiB, &raw)
+			if err != nil {
+				util.Red(fmt.Sprintf("%s, unable to unmarshal api data.", err.Error()))
+				continue
+			}
+
+			apiB = []byte(*raw[fromTo])
+			apiD := CurrencyConverterAPI{}
+			err = json.Unmarshal(apiB, &apiD)
+			if err != nil {
+				util.Red(fmt.Sprintf("%s, unable to unmarshal api data.", err.Error()))
+				continue
+			}
 
 			//Handle API
-			forex.exc = 0.0
-
+			forex.exc = apiD.Val
 			break loopy
 		default:
 			errr = errors.New("Unable to perform conversion, all sources failed")
@@ -196,8 +223,8 @@ loopy:
 	}
 
 	//Cache the dates result in database;
-	if errr == nil {
-		util.Magenta("Using cached xml/api data")
+	if errr == nil && cache {
+		util.Magenta("Storing cached xml/api data")
 		err = f.db.(*bolt.DB).Update(func(tx *bolt.Tx) error {
 			bucket, err := tx.CreateBucketIfNotExists([]byte(bucketKey))
 			util.Catch(err)
@@ -221,20 +248,30 @@ func (f Fixer) getXMLType([]byte) interface{} {
 }
 
 //Get makes a get request to the server
-func (f Fixer) Get(url string) []byte {
+func (f Fixer) Get(url string) ([]byte, error) {
 	client := http.DefaultClient
 	req, err := http.NewRequest("GET", url, nil)
-	util.Catch(err)
+	if err != nil {
+		return []byte{}, err
+	}
 
 	res, err := client.Do(req)
-	util.HTTPCatch(res, err)
+	if err == nil && res.StatusCode != http.StatusOK {
+		err = fmt.Errorf("status code was %d", res.StatusCode)
+	}
+	if err != nil {
+		return []byte{}, err
+	}
+
+	defer res.Body.Close()
 
 	//get data body
 	bbb, err := ioutil.ReadAll(res.Body)
-	util.Catch(err)
-	res.Body.Close()
+	if err != nil {
+		return []byte{}, err
+	}
 
-	return bbb
+	return bbb, nil
 }
 
 //Close close the things that are open
