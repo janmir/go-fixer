@@ -4,7 +4,7 @@
 # :see_no_evil: Features
 - [x] Multi-sources
 - [x] Local store
-- [] Trend graph
+- [ ] Trend graph
 
 
 # :card_file_box: Data Sources
