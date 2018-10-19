@@ -78,7 +78,6 @@ func Make() Fixer {
 }
 
 //Convert converts the value to a different currency
-//
 func (f Fixer) Convert(from, to Currency, out interface{}) error {
 	defer util.TimeTrack(time.Now(), "Conversion")
 
@@ -120,9 +119,8 @@ func (f Fixer) Fetch(from, to Currency) (Currency, error) {
 	)
 
 	//check db first
-	// key: date
-	// value: {curr:"", acr:"", sym: ""}
-	//return forex, nil
+	// key: FROM_TO, e.g PHP_JPY
+	// value: "0.12121"
 	yesterday := f.local.AddDate(0, 0, -1)
 	bucketKey := yesterday.Format("2006-01-02")
 	util.Logger("Local:", bucketKey)
@@ -205,7 +203,9 @@ loopy:
 			util.Catch(err)
 
 			err = bucket.Put([]byte(fromTo), []byte(fmt.Sprintf("%f", forex.exc)))
-			util.Catch(err)
+			if err != nil {
+				return err
+			}
 
 			return nil
 		})
