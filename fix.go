@@ -86,7 +86,7 @@ func (f Fixer) Convert(from, to Currency, out interface{}) error {
 	case *float32:
 		*(out.(*float32)) = float32(forex.exc)
 	case *string:
-		*(out.(*string)) = fmt.Sprintf("%s %0.5f", forex.Sym, forex.exc)
+		*(out.(*string)) = fmt.Sprintf("%s%0.4f", forex.Sym, forex.exc)
 	default:
 		util.Catch(fmt.Errorf("Type unknown/unsupported ｢%T｣", out))
 	}
@@ -104,11 +104,14 @@ func (f Fixer) Fetch(from, to Currency) (Currency, error) {
 	//check db first
 	// key: date
 	// value: {curr:"", acr:"", sym: ""}
+	//return forex, nil
 
 	//get new data
+loopy:
 	for _, v := range _sources {
 		switch v.typ {
 		case "xml":
+			util.Logger("XML Fetch")
 			//Get the xml
 			xmlB := f.Get(v.url)
 
@@ -127,10 +130,11 @@ func (f Fixer) Fetch(from, to Currency) (Currency, error) {
 				forex = to
 				forex.exc = xmlD.Calculate(from, to)
 
-				return forex, nil
+				break loopy
 			default:
 			}
 		case "api":
+			util.Logger("API Fetch")
 			//Get via api
 			url := fmt.Sprintf(v.url, from.Acr, to.Acr)
 
@@ -141,11 +145,13 @@ func (f Fixer) Fetch(from, to Currency) (Currency, error) {
 			forex = to
 			forex.exc = 0.0
 
-			return forex, nil
+			break loopy
 		default:
 			errr = errors.New("Unable to perform conversion, all sources failed")
 		}
 	}
+
+	//Cache the dates result in database;
 
 	return forex, errr
 }
