@@ -62,6 +62,8 @@ func Make() Fixer {
 //Convert converts the value to a different currency
 //
 func (f Fixer) Convert(from, to Currency, out interface{}) error {
+	defer util.TimeTrack(time.Now(), "Conversion")
+
 	//check if output variable is a pointer
 	util.IsInterfaceAPointer(out)
 
@@ -124,6 +126,8 @@ func (f Fixer) Fetch(from, to Currency) (Currency, error) {
 				//Handle EuroBack data here
 				forex = to
 				forex.exc = xmlD.Calculate(from, to)
+
+				return forex, nil
 			default:
 			}
 		case "api":
@@ -136,6 +140,8 @@ func (f Fixer) Fetch(from, to Currency) (Currency, error) {
 			//Handle API
 			forex = to
 			forex.exc = 0.0
+
+			return forex, nil
 		default:
 			errr = errors.New("Unable to perform conversion, all sources failed")
 		}
