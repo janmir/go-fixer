@@ -12,4 +12,6 @@ func main() {
 	valString := ""
 	f.Convert(fixer.Currencies.JPY, fixer.Currencies.PHP, &valString)
 	util.Logger("JPY->PHP:", valString)
+
+	f.Trend(fixer.Currencies.JPY, fixer.Currencies.PHP, 0)
 }

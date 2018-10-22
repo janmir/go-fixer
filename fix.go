@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"time"
 
@@ -17,7 +18,9 @@ import (
 )
 
 const (
-	_offDB = "data.db"
+	_offDB              = "data.db"
+	_enableValueMerging = true
+	_commonTime         = "2006-01-02"
 )
 
 var (
@@ -78,6 +81,46 @@ func Make() Fixer {
 	return fix
 }
 
+//Trend creates a trend graph from data
+// generates an svg file and returns the path
+func (f Fixer) Trend(from, to Currency, count int) (string, error) {
+	sortee := make(Sorted, 0)
+	fromTo := fmt.Sprintf("%s_%s", from.Acr, to.Acr)
+
+	err := f.db.(*bolt.DB).View(func(tx *bolt.Tx) error {
+		//get and adjust count based on max
+		err := tx.ForEach(func(name []byte, bucket *bolt.Bucket) error {
+			val := bucket.Get([]byte(fromTo))
+			if val != nil {
+				fval, err := strconv.ParseFloat(string(val), 32)
+				util.Catch(err)
+
+				tname, err := time.Parse(_commonTime, string(name))
+				util.Catch(err)
+
+				//append to top list
+				sortee = append(sortee, Sortables{
+					date: tname.Local(),
+					rate: float32(fval),
+				})
+			}
+			return nil
+		})
+		util.Catch(err)
+
+		//sortee it first
+		sort.Sort(sortee)
+
+		//get all
+		util.Logger("Buck: %+v", sortee)
+
+		return nil
+	})
+	util.Catch(err)
+
+	return "", nil
+}
+
 //Convert converts the value to a different currency
 func (f Fixer) Convert(from, to Currency, out interface{}, opt ...interface{}) error {
 	defer util.TimeTrack(time.Now(), "Conversion")
@@ -126,9 +169,9 @@ func (f Fixer) Fetch(from, to Currency, cache bool) (Currency, error) {
 	//check db first
 	// key: FROM_TO, e.g PHP_JPY
 	// value: "0.12121"
-	yesterday := f.local.AddDate(0, 0, -1)
-	bucketKey := yesterday.Format("2006-01-02")
-	util.Logger("Local:", bucketKey)
+	yesterday := f.local.AddDate(0, 0, -1) //-1
+	bucketKey := yesterday.Format(_commonTime)
+	util.Logger("Local Time:", bucketKey)
 
 	// store some data
 	fromTo := fmt.Sprintf("%s_%s", from.Acr, to.Acr)
@@ -158,11 +201,13 @@ func (f Fixer) Fetch(from, to Currency, cache bool) (Currency, error) {
 	}
 
 	//get new data
+	merge := false
+	mergeVal := float32(0.0)
 loopy:
 	for _, v := range _sources {
 		switch v.typ {
 		case "xml":
-			util.Cyan("Via XML Fetch")
+			util.Cyan("Via XML fetch.")
 
 			//Get the xml
 			xmlB, err := f.Get(v.url)
@@ -182,13 +227,24 @@ loopy:
 					continue
 				}
 
+				//Check if data is latest
+				util.Logger("Data Time:", xmlD.Cube.Cube.Time)
+				if _enableValueMerging && xmlD.Cube.Cube.Time != bucketKey /*yesterday in string format*/ {
+					merge = true
+				}
+
 				//Handle EuroBack data here
 				forex.exc = xmlD.Calculate(from, to)
-				break loopy
+
+				if !merge {
+					break loopy
+				} else {
+					mergeVal = forex.exc
+				}
 			default:
 			}
 		case "api":
-			util.Cyan("Via API Fetch")
+			util.Cyan("Via API fetch.")
 
 			//Get via api
 			url := fmt.Sprintf(v.url, from.Acr, to.Acr)
@@ -220,6 +276,12 @@ loopy:
 		default:
 			errr = errors.New("Unable to perform conversion, all sources failed")
 		}
+	}
+
+	//if merge average the values
+	if merge {
+		util.Cyan("Merging data.")
+		forex.exc = (forex.exc + mergeVal) / 2.0
 	}
 
 	//Cache the dates result in database;

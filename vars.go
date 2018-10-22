@@ -2,6 +2,7 @@ package fixer
 
 import (
 	"errors"
+	"time"
 
 	util "github.com/janmir/go-util"
 )
@@ -56,6 +57,31 @@ type EuroCenterBankRootXML struct {
 //CurrencyConverterAPI ...
 type CurrencyConverterAPI struct {
 	Val float32 `json:"val"`
+}
+
+/******************************
+	Common
+*******************************/
+
+//Sortables for trend creation
+type Sortables struct {
+	date time.Time
+	rate float32
+}
+
+//Sorted sortable data
+type Sorted []Sortables
+
+func (p Sorted) Len() int {
+	return len(p)
+}
+
+func (p Sorted) Less(i, j int) bool {
+	return p[i].date.Before(p[j].date)
+}
+
+func (p Sorted) Swap(i, j int) {
+	p[i], p[j] = p[j], p[i]
 }
 
 var (
